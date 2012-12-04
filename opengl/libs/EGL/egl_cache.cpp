@@ -29,12 +29,16 @@
 #define MAX_EGL_CACHE_ENTRY_SIZE (16 * 1024);
 #endif
 
+#ifndef MAX_EGL_CACHE_KEY_SIZE
+#define MAX_EGL_CACHE_KEY_SIZE (1024);
+#endif
+
 #ifndef MAX_EGL_CACHE_SIZE
 #define MAX_EGL_CACHE_SIZE (64 * 1024);
 #endif
 
 // Cache size limits.
-static const size_t maxKeySize = 1024;
+static const size_t maxKeySize = MAX_EGL_CACHE_KEY_SIZE;
 static const size_t maxValueSize = MAX_EGL_CACHE_ENTRY_SIZE;
 static const size_t maxTotalSize = MAX_EGL_CACHE_SIZE;
 
@@ -241,19 +245,11 @@ void egl_cache_t::saveBlobCacheLocked() {
         }
 
         size_t fileSize = headerSize + cacheSize;
-        if (ftruncate(fd, fileSize) == -1) {
-            ALOGE("error setting cache file size: %s (%d)", strerror(errno),
-                    errno);
-            close(fd);
-            unlink(fname);
-            return;
-        }
 
-        uint8_t* buf = reinterpret_cast<uint8_t*>(mmap(NULL, fileSize,
-                PROT_WRITE, MAP_SHARED, fd, 0));
-        if (buf == MAP_FAILED) {
-            ALOGE("error mmaping cache file: %s (%d)", strerror(errno),
-                    errno);
+        uint8_t* buf = new uint8_t [fileSize];
+        if (!buf) {
+            ALOGE("error allocating buffer for cache contents: %s (%d)",
+                    strerror(errno), errno);
             close(fd);
             unlink(fname);
             return;
@@ -264,7 +260,7 @@ void egl_cache_t::saveBlobCacheLocked() {
         if (err != OK) {
             ALOGE("error writing cache contents: %s (%d)", strerror(-err),
                     -err);
-            munmap(buf, fileSize);
+            delete [] buf;
             close(fd);
             unlink(fname);
             return;
@@ -275,7 +271,16 @@ void egl_cache_t::saveBlobCacheLocked() {
         uint32_t* crc = reinterpret_cast<uint32_t*>(buf + 4);
         *crc = crc32c(buf + headerSize, cacheSize);
 
-        munmap(buf, fileSize);
+        if (write(fd, buf, fileSize) == -1) {
+            ALOGE("error writing cache file: %s (%d)", strerror(errno),
+                    errno);
+            delete [] buf;
+            close(fd);
+            unlink(fname);
+            return;
+        }
+
+        delete [] buf;
         fchmod(fd, S_IRUSR);
         close(fd);
     }

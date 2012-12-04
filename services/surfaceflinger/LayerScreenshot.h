@@ -34,24 +34,24 @@ class LayerScreenshot : public LayerBaseClient
     GLuint mTextureName;
     GLfloat mTexCoords[8];
     sp<SurfaceFlinger> mFlinger;
+    bool mIsSecure;
 public:    
-            LayerScreenshot(SurfaceFlinger* flinger, DisplayID display,
-                        const sp<Client>& client);
+            LayerScreenshot(SurfaceFlinger* flinger, const sp<Client>& client);
         virtual ~LayerScreenshot();
 
         status_t capture();
 
     virtual void initStates(uint32_t w, uint32_t h, uint32_t flags);
     virtual uint32_t doTransaction(uint32_t flags);
-    virtual void onDraw(const Region& clip) const;
+    virtual void onDraw(const sp<const DisplayDevice>& hw, const Region& clip) const;
     virtual bool isOpaque() const         { return false; }
-    virtual bool isSecure() const         { return false; }
+    virtual bool isSecure() const         { return mIsSecure; }
     virtual bool isProtectedByApp() const { return false; }
     virtual bool isProtectedByDRM() const { return false; }
     virtual const char* getTypeId() const { return "LayerScreenshot"; }
 
 private:
-    status_t captureLocked();
+    status_t captureLocked(int32_t layerStack);
     void initTexture(GLfloat u, GLfloat v);
 };
 

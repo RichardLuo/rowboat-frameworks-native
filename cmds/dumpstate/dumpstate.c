@@ -85,10 +85,13 @@ static void dumpstate() {
     dump_file("ZONEINFO", "/proc/zoneinfo");
     dump_file("PAGETYPEINFO", "/proc/pagetypeinfo");
     dump_file("BUDDYINFO", "/proc/buddyinfo");
+    dump_file("FRAGMENTATION INFO", "/d/extfrag/unusable_index");
 
 
     dump_file("KERNEL WAKELOCKS", "/proc/wakelocks");
+    dump_file("KERNEL WAKE SOURCES", "/d/wakeup_sources");
     dump_file("KERNEL CPUFREQ", "/sys/devices/system/cpu/cpu0/cpufreq/stats/time_in_state");
+    dump_file("KERNEL SYNC", "/d/sync");
 
     run_command("PROCESSES", 10, "ps", "-P", NULL);
     run_command("PROCESSES AND THREADS", 10, "ps", "-t", "-p", "-P", NULL);
@@ -164,7 +167,7 @@ static void dumpstate() {
 
     run_command("SYSTEM SETTINGS", 20, SU_PATH, "root", "sqlite3",
             "/data/data/com.android.providers.settings/databases/settings.db",
-            "pragma user_version; select * from system; select * from secure;", NULL);
+            "pragma user_version; select * from system; select * from secure; select * from global;", NULL);
 
     /* The following have a tendency to get wedged when wifi drivers/fw goes belly-up. */
     run_command("NETWORK INTERFACES", 10, SU_PATH, "root", "netcfg", NULL);
@@ -292,7 +295,7 @@ static void dumpstate() {
 }
 
 static void usage() {
-    fprintf(stderr, "usage: dumpstate [-b soundfile] [-e soundfile] [-o file [-d] [-p] [-z]] [-s]\n"
+    fprintf(stderr, "usage: dumpstate [-b soundfile] [-e soundfile] [-o file [-d] [-p] [-z]] [-s] [-q]\n"
             "  -o: write to file (instead of stdout)\n"
             "  -d: append date to filename (requires -o)\n"
             "  -z: gzip output (requires -o)\n"
@@ -300,18 +303,28 @@ static void usage() {
             "  -s: write output to control socket (for init)\n"
             "  -b: play sound file instead of vibrate, at beginning of job\n"
             "  -e: play sound file instead of vibrate, at end of job\n"
+            "  -q: disable vibrate\n"
 		);
 }
 
 int main(int argc, char *argv[]) {
     int do_add_date = 0;
     int do_compress = 0;
+    int do_vibrate = 1;
     char* use_outfile = 0;
     char* begin_sound = 0;
     char* end_sound = 0;
     int use_socket = 0;
     int do_fb = 0;
 
+    if (getuid() != 0) {
+        // Old versions of the adb client would call the
+        // dumpstate command directly. Newer clients
+        // call /system/bin/bugreport instead. If we detect
+        // we're being called incorrectly, then exec the
+        // correct program.
+        return execl("/system/bin/bugreport", "/system/bin/bugreport", NULL);
+    }
     ALOGI("begin\n");
 
     signal(SIGPIPE, SIG_IGN);
@@ -328,7 +341,7 @@ int main(int argc, char *argv[]) {
     dump_traces_path = dump_traces();
 
     int c;
-    while ((c = getopt(argc, argv, "b:de:ho:svzp")) != -1) {
+    while ((c = getopt(argc, argv, "b:de:ho:svqzp")) != -1) {
         switch (c) {
             case 'b': begin_sound = optarg;  break;
             case 'd': do_add_date = 1;       break;
@@ -336,6 +349,7 @@ int main(int argc, char *argv[]) {
             case 'o': use_outfile = optarg;  break;
             case 's': use_socket = 1;        break;
             case 'v': break;  // compatibility no-op
+            case 'q': do_vibrate = 0;        break;
             case 'z': do_compress = 6;       break;
             case 'p': do_fb = 1;             break;
             case '?': printf("\n");
@@ -345,9 +359,12 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    /* open the vibrator before dropping root */
-    FILE *vibrator = fopen("/sys/class/timed_output/vibrator/enable", "w");
-    if (vibrator) fcntl(fileno(vibrator), F_SETFD, FD_CLOEXEC);
+    FILE *vibrator = 0;
+    if (do_vibrate) {
+        /* open the vibrator before dropping root */
+        vibrator = fopen("/sys/class/timed_output/vibrator/enable", "w");
+        if (vibrator) fcntl(fileno(vibrator), F_SETFD, FD_CLOEXEC);
+    }
 
     /* read /proc/cmdline before dropping root */
     FILE *cmdline = fopen("/proc/cmdline", "r");
@@ -356,44 +373,42 @@ int main(int argc, char *argv[]) {
         fclose(cmdline);
     }
 
-    if (getuid() == 0) {
-        if (prctl(PR_SET_KEEPCAPS, 1) < 0) {
-            ALOGE("prctl(PR_SET_KEEPCAPS) failed: %s\n", strerror(errno));
-            return -1;
-        }
+    if (prctl(PR_SET_KEEPCAPS, 1) < 0) {
+        ALOGE("prctl(PR_SET_KEEPCAPS) failed: %s\n", strerror(errno));
+        return -1;
+    }
 
-        /* switch to non-root user and group */
-        gid_t groups[] = { AID_LOG, AID_SDCARD_R, AID_SDCARD_RW,
-                AID_MOUNT, AID_INET, AID_NET_BW_STATS };
-        if (setgroups(sizeof(groups)/sizeof(groups[0]), groups) != 0) {
-            ALOGE("Unable to setgroups, aborting: %s\n", strerror(errno));
-            return -1;
-        }
-        if (setgid(AID_SHELL) != 0) {
-            ALOGE("Unable to setgid, aborting: %s\n", strerror(errno));
-            return -1;
-        }
-        if (setuid(AID_SHELL) != 0) {
-            ALOGE("Unable to setuid, aborting: %s\n", strerror(errno));
-            return -1;
-        }
+    /* switch to non-root user and group */
+    gid_t groups[] = { AID_LOG, AID_SDCARD_R, AID_SDCARD_RW,
+            AID_MOUNT, AID_INET, AID_NET_BW_STATS };
+    if (setgroups(sizeof(groups)/sizeof(groups[0]), groups) != 0) {
+        ALOGE("Unable to setgroups, aborting: %s\n", strerror(errno));
+        return -1;
+    }
+    if (setgid(AID_SHELL) != 0) {
+        ALOGE("Unable to setgid, aborting: %s\n", strerror(errno));
+        return -1;
+    }
+    if (setuid(AID_SHELL) != 0) {
+        ALOGE("Unable to setuid, aborting: %s\n", strerror(errno));
+        return -1;
+    }
 
-        struct __user_cap_header_struct capheader;
-        struct __user_cap_data_struct capdata[2];
-        memset(&capheader, 0, sizeof(capheader));
-        memset(&capdata, 0, sizeof(capdata));
-        capheader.version = _LINUX_CAPABILITY_VERSION_3;
-        capheader.pid = 0;
+    struct __user_cap_header_struct capheader;
+    struct __user_cap_data_struct capdata[2];
+    memset(&capheader, 0, sizeof(capheader));
+    memset(&capdata, 0, sizeof(capdata));
+    capheader.version = _LINUX_CAPABILITY_VERSION_3;
+    capheader.pid = 0;
 
-        capdata[CAP_TO_INDEX(CAP_SYSLOG)].permitted = CAP_TO_MASK(CAP_SYSLOG);
-        capdata[CAP_TO_INDEX(CAP_SYSLOG)].effective = CAP_TO_MASK(CAP_SYSLOG);
-        capdata[0].inheritable = 0;
-        capdata[1].inheritable = 0;
+    capdata[CAP_TO_INDEX(CAP_SYSLOG)].permitted = CAP_TO_MASK(CAP_SYSLOG);
+    capdata[CAP_TO_INDEX(CAP_SYSLOG)].effective = CAP_TO_MASK(CAP_SYSLOG);
+    capdata[0].inheritable = 0;
+    capdata[1].inheritable = 0;
 
-        if (capset(&capheader, &capdata[0]) < 0) {
-            ALOGE("capset failed: %s\n", strerror(errno));
-            return -1;
-        }
+    if (capset(&capheader, &capdata[0]) < 0) {
+        ALOGE("capset failed: %s\n", strerror(errno));
+        return -1;
     }
 
     char path[PATH_MAX], tmp_path[PATH_MAX];

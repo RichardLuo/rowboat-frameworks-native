@@ -118,7 +118,7 @@ ZipFileRO::~ZipFileRO() {
  */
 int ZipFileRO::entryToIndex(const ZipEntryRO entry) const
 {
-    long ent = ((long) entry) - kZipEntryAdj;
+    long ent = ((intptr_t) entry) - kZipEntryAdj;
     if (ent < 0 || ent >= mHashTableSize || mHashTable[ent].name == NULL) {
         ALOGW("Invalid ZipEntryRO %p (%ld)\n", entry, ent);
         return -1;
@@ -140,7 +140,7 @@ status_t ZipFileRO::open(const char* zipFileName)
     /*
      * Open and map the specified file.
      */
-    fd = ::open(zipFileName, O_RDONLY | O_BINARY);
+    fd = TEMP_FAILURE_RETRY(::open(zipFileName, O_RDONLY | O_BINARY));
     if (fd < 0) {
         ALOGW("Unable to open zip '%s': %s\n", zipFileName, strerror(errno));
         return NAME_NOT_FOUND;
@@ -320,6 +320,25 @@ bool ZipFileRO::mapCentralDirectory(void)
     return true;
 }
 
+
+/*
+ * Round up to the next highest power of 2.
+ *
+ * Found on http://graphics.stanford.edu/~seander/bithacks.html.
+ */
+static unsigned int roundUpPower2(unsigned int val)
+{
+    val--;
+    val |= val >> 1;
+    val |= val >> 2;
+    val |= val >> 4;
+    val |= val >> 8;
+    val |= val >> 16;
+    val++;
+
+    return val;
+}
+
 bool ZipFileRO::parseZipArchive(void)
 {
     bool result = false;
@@ -459,7 +478,7 @@ ZipEntryRO ZipFileRO::findEntryByIndex(int idx) const
     for (int ent = 0; ent < mHashTableSize; ent++) {
         if (mHashTable[ent].name != NULL) {
             if (idx-- == 0)
-                return (ZipEntryRO) (ent + kZipEntryAdj);
+                return (ZipEntryRO) (intptr_t)(ent + kZipEntryAdj);
         }
     }
 
@@ -752,7 +771,7 @@ bool ZipFileRO::uncompressEntry(ZipEntryRO entry, int fd) const
     ptr = (const unsigned char*) file->getDataPtr();
 
     if (method == kCompressStored) {
-        ssize_t actual = write(fd, ptr, uncompLen);
+        ssize_t actual = TEMP_FAILURE_RETRY(write(fd, ptr, uncompLen));
         if (actual < 0) {
             ALOGE("Write failed: %s\n", strerror(errno));
             goto unmap;
@@ -901,9 +920,12 @@ bail:
             (zerr == Z_STREAM_END && zstream.avail_out != sizeof(writeBuf)))
         {
             long writeSize = zstream.next_out - writeBuf;
-            int cc = write(fd, writeBuf, writeSize);
-            if (cc != (int) writeSize) {
-                ALOGW("write failed in inflate (%d vs %ld)\n", cc, writeSize);
+            int cc = TEMP_FAILURE_RETRY(write(fd, writeBuf, writeSize));
+            if (cc < 0) {
+                ALOGW("write failed in inflate: %s", strerror(errno));
+                goto z_bail;
+            } else if (cc != (int) writeSize) {
+                ALOGW("write failed in inflate (%d vs %ld)", cc, writeSize);
                 goto z_bail;
             }
 
