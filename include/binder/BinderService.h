@@ -46,6 +46,15 @@ public:
         IPCThreadState::self()->joinThreadPool();
     }
 
+    static void publishAndJoinThreadPoolEx(const char *postfix = NULL) {
+        SERVICE *service = new SERVICE(postfix);
+        sp<ProcessState> proc(ProcessState::self());
+        sp<IServiceManager> sm(defaultServiceManager());
+        sm->addService(String16(service->getName()), service);
+        ProcessState::self()->startThreadPool();
+        IPCThreadState::self()->joinThreadPool();
+    }
+
     static void instantiate() { publish(); }
 
     static status_t shutdown() {
