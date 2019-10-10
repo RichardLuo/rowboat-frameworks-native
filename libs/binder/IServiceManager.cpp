@@ -170,7 +170,7 @@ public:
         data.writeInterfaceToken(IServiceManager::getInterfaceDescriptor());
         const status_t err = remote()->transact(LIST_SERVICES_TRANSACTION, data, &reply);
         if (err == NO_ERROR) {
-            const uint32_t len = reply.readUint32();
+            const uint32_t len = reply.readInt32();
             for (uint32_t i = 0; i < len; i++) {
                 res.add(reply.readString16());
             }
