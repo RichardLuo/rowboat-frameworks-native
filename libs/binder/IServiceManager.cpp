@@ -166,16 +166,14 @@ public:
     virtual Vector<String16> listServices()
     {
         Vector<String16> res;
-        int n = 0;
-
-        for (;;) {
-            Parcel data, reply;
-            data.writeInterfaceToken(IServiceManager::getInterfaceDescriptor());
-            data.writeInt32(n++);
-            status_t err = remote()->transact(LIST_SERVICES_TRANSACTION, data, &reply);
-            if (err != NO_ERROR)
-                break;
-            res.add(reply.readString16());
+        Parcel data, reply;
+        data.writeInterfaceToken(IServiceManager::getInterfaceDescriptor());
+        const status_t err = remote()->transact(LIST_SERVICES_TRANSACTION, data, &reply);
+        if (err == NO_ERROR) {
+            const uint32_t len = reply.readUint32();
+            for (uint32_t i = 0; i < len; i++) {
+                res.add(reply.readString16());
+            }
         }
         return res;
     }
