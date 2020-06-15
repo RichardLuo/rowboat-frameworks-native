@@ -39,6 +39,8 @@
 #include <stdint.h>
 #include <sys/mman.h>
 
+#include <string>
+
 #ifndef INT32_MAX
 #define INT32_MAX ((int32_t)(2147483647))
 #endif
@@ -1587,5 +1589,28 @@ void Parcel::Blob::clear() {
     mData = NULL;
     mSize = 0;
 }
+
+status_t Parcel::writeStdString(const std::string& str) {
+    status_t err = writeInt32(str.size());
+    if (str.size() > 0 && err == NO_ERROR) {
+        err = write(&str[0], str.size());
+    }
+    if (err) {
+        LOG_EXIT("writeStdString error:%d size:%zd", err, str.size());
+    } else {
+        return err;
+    }
+}
+
+std::string Parcel::readStdString() const {
+    int32_t size = readInt32();
+    // watch for potential int overflow adding 1 for trailing NUL
+    if (size > 0 && size < INT32_MAX) {
+        const char* str = (const char*)readInplace(size);
+        if (str) return std::string(str, (size_t)size);
+    }
+    return std::string();
+}
+
 
 }; // namespace android

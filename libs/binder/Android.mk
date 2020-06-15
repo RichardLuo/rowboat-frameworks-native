@@ -36,10 +36,28 @@ LOCAL_LDLIBS += -lpthread
 LOCAL_MODULE := libbinder
 LOCAL_SHARED_LIBRARIES := liblog libcutils libutils
 LOCAL_SRC_FILES := $(sources)
+
+ifneq ($(TARGET_SIMULATOR),true)
+LOCAL_C_INCLUDES += bionic \
+					external/stlport/stlport
+
+LOCAL_SHARED_LIBRARIES += libstlport \
+						  libdl
+endif
+
 include $(BUILD_SHARED_LIBRARY)
+
+
 
 include $(CLEAR_VARS)
 LOCAL_LDLIBS += -lpthread
 LOCAL_MODULE := libbinder
 LOCAL_SRC_FILES := $(sources)
+
+ifneq ($(TARGET_SIMULATOR),true)
+LOCAL_C_INCLUDES += bionic \
+					external/stlport/stlport
+LOCAL_SHARED_LIBRARIES += libstlport \
+						  libdl
+endif
 include $(BUILD_STATIC_LIBRARY)

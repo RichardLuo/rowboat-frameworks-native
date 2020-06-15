@@ -7,7 +7,14 @@ LOCAL_SRC_FILES:= \
 LOCAL_SHARED_LIBRARIES := \
 	libutils \
 	libbinder
-	
+
+
+ifneq ($(TARGET_SIMULATOR),true)
+LOCAL_C_INCLUDES += bionic \
+					external/stlport/stlport
+LOCAL_SHARED_LIBRARIES += libstlport \
+						  libdl
+endif
 
 ifeq ($(TARGET_OS),linux)
 	LOCAL_CFLAGS += -DXP_UNIX

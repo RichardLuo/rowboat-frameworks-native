@@ -24,6 +24,8 @@
 #include <utils/Vector.h>
 #include <utils/Flattenable.h>
 
+#include <string>
+
 // ---------------------------------------------------------------------------
 namespace android {
 
@@ -104,6 +106,8 @@ public:
     status_t            writeWeakBinder(const wp<IBinder>& val);
     status_t            write(const Flattenable& val);
 
+    status_t            writeStdString(const std::string& str);
+
     template<typename T>
     status_t            write(const LightFlattenable<T>& val);
 
@@ -150,6 +154,8 @@ public:
     status_t            readDouble(double *pArg) const;
     intptr_t            readIntPtr() const;
     status_t            readIntPtr(intptr_t *pArg) const;
+
+    std::string         readStdString() const;
 
     const char*         readCString() const;
     String8             readString8() const;
