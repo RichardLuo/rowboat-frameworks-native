@@ -321,7 +321,7 @@ static int open_driver()
             close(fd);
             fd = -1;
         }
-        size_t maxThreads = 15;
+        size_t maxThreads = 5;
         result = ioctl(fd, BINDER_SET_MAX_THREADS, &maxThreads);
         if (result == -1) {
             ALOGE("Binder ioctl to set max threads failed: %s", strerror(errno));
